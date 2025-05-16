@@ -46,23 +46,17 @@ export function ChatForm({ className, ...props }: React.ComponentProps<"form">) 
 function ChatFormContent({ className, ...props }: React.ComponentProps<"form">) {
   const isEmbedMode = useEmbedMode()
 
-  const {
-    messages: originalMessages,
-    input,
-    setInput,
-    handleSubmit: handleChatSubmit,
-    isLoading,
-    stop,
-  } = useChat({
-    api: "/api/chat",
-  })
-
+  // State chat manual
+  const [messages, setMessages] = useState<{ role: string; content: string; id?: string }[]>([])
+  const [input, setInput] = useState("")
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [messageSources, setMessageSources] = useState<Record<string, Source[]>>({})
-  const [processedMessages, setProcessedMessages] = useState<typeof originalMessages>([])
   const [newsData, setNewsData] = useState<any[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
   const chatContainerRef = useRef<HTMLDivElement>(null)
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true)
+  const [sampleQuestions, setSampleQuestions] = useState<string[]>([])
 
   // Deteksi posisi scroll sebelum pesan baru masuk
   useEffect(() => {
@@ -77,10 +71,10 @@ function ChatFormContent({ className, ...props }: React.ComponentProps<"form">) 
 
   // Auto-scroll ke bawah hanya jika user memang di bawah dan pesan terakhir adalah dari user
   useEffect(() => {
-    const lastMessage = processedMessages[processedMessages.length - 1]
+    const lastMessage = messages[messages.length - 1]
     if (
       shouldAutoScroll &&
-      processedMessages.length > 0 &&
+      messages.length > 0 &&
       lastMessage?.role === "user"
     ) {
       setTimeout(() => {
@@ -88,7 +82,7 @@ function ChatFormContent({ className, ...props }: React.ComponentProps<"form">) 
       }, 100)
     }
     // Tidak ada auto-scroll jika pesan terakhir dari asisten (chatbot sedang mengetik)
-  }, [processedMessages, shouldAutoScroll])
+  }, [messages, shouldAutoScroll])
 
   useEffect(() => {
     // Fetch news metadata for source references
@@ -103,34 +97,28 @@ function ChatFormContent({ className, ...props }: React.ComponentProps<"form">) 
         console.error("Failed to fetch news metadata:", error)
       }
     }
-
     fetchNewsMetadata()
   }, [])
 
   useEffect(() => {
     // Deteksi apakah chatbot sedang memproses atau sudah mulai mengetik
     if (isLoading) {
-      // Jika tidak ada pesan asisten yang sedang diproses, berarti masih dalam tahap loading awal
-      const lastMessage = originalMessages[originalMessages.length - 1]
+      const lastMessage = messages[messages.length - 1]
       if (!lastMessage || lastMessage.role !== "assistant" || lastMessage.content === "") {
         setIsProcessing(true)
       } else {
-        // Jika sudah ada konten, berarti sudah mulai mengetik
         setIsProcessing(false)
       }
     } else {
       setIsProcessing(false)
     }
-  }, [isLoading, originalMessages])
+  }, [isLoading, messages])
 
+  // Process messages to extract sources and clean up content
   useEffect(() => {
-    // Process messages to extract sources and clean up content
-    const newProcessedMessages = originalMessages.map((message) => {
+    const newProcessedMessages = messages.map((message) => {
       if (message.role === "assistant") {
-        // Extract article references and clean up the message
         const { cleanContent, articleRefs } = extractAndCleanMessage(message.content)
-
-        // Update sources if we found article references
         if (articleRefs.length > 0 && newsData.length > 0) {
           const uniqueRefs = [...new Set(articleRefs)]
           const sources = uniqueRefs
@@ -145,16 +133,13 @@ function ChatFormContent({ className, ...props }: React.ComponentProps<"form">) 
               return null
             })
             .filter(Boolean) as Source[]
-
           if (sources.length > 0) {
             setMessageSources((prev) => ({
               ...prev,
-              [message.id]: sources,
+              [message.id ?? `${Date.now()}`]: sources,
             }))
           }
         }
-
-        // Return the message with cleaned content
         return {
           ...message,
           content: cleanContent,
@@ -162,9 +147,7 @@ function ChatFormContent({ className, ...props }: React.ComponentProps<"form">) 
       }
       return message
     })
-
-    setProcessedMessages(newProcessedMessages)
-
+    // Tidak perlu setProcessedMessages, langsung gunakan messages
     // Notify parent window of height changes in embed mode
     if (isEmbedMode && typeof window !== "undefined" && window.parent !== window) {
       setTimeout(() => {
@@ -172,38 +155,49 @@ function ChatFormContent({ className, ...props }: React.ComponentProps<"form">) 
         window.parent.postMessage({ type: "resize", height }, "*")
       }, 100)
     }
-  }, [originalMessages, newsData, isEmbedMode])
+  }, [messages, newsData, isEmbedMode])
 
-  // Function to extract article references and clean up the message
   function extractAndCleanMessage(content: string): { cleanContent: string; articleRefs: string[] } {
-    // Extract article references
     const articleRegex = /ARTIKEL\s+(\d+)/gi
     const matches = Array.from(content.matchAll(articleRegex))
     const articleRefs: string[] = []
-
     for (const match of matches) {
       if (match[1]) {
         articleRefs.push(match[1])
       }
     }
-
-    // Clean up the content by removing trailing article references
     let cleanContent = content
-
-    // Remove article references at the end of the message
     const trailingArticleRegex = /\s*ARTIKEL\s+\d+(\s+ARTIKEL\s+\d+)*\s*$/
     cleanContent = cleanContent.replace(trailingArticleRegex, "")
-
-    // Remove any remaining "(ARTIKEL X)" references in the text
-    cleanContent = cleanContent.replace(/$$ARTIKEL\s+\d+$$/gi, "")
-
+    cleanContent = cleanContent.replace(/\$\$ARTIKEL\s+\d+\$\$/gi, "")
     return { cleanContent, articleRefs }
   }
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!input.trim()) return
-    handleChatSubmit(e)
+    setIsLoading(true)
+    setError(null)
+    // Tambahkan pesan user langsung ke chat
+    const userMsg = { role: "user", content: input, id: `${Date.now()}-user` }
+    setMessages((prev) => [...prev, userMsg])
+    setInput("")
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: [...messages, userMsg] }),
+      })
+      if (!res.ok) throw new Error("Gagal memproses permintaan.")
+      const text = await res.text()
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: text, id: `${Date.now()}-assistant` },
+      ])
+    } catch (err: any) {
+      setError(err.message || "Gagal memproses permintaan.")
+    }
+    setIsLoading(false)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -211,6 +205,34 @@ function ChatFormContent({ className, ...props }: React.ComponentProps<"form">) 
       e.preventDefault()
       handleSubmit(e as unknown as React.FormEvent<HTMLFormElement>)
     }
+  }
+
+  // Fetch 3 random sample questions from /api/questions
+  useEffect(() => {
+    async function fetchSampleQuestions() {
+      try {
+        const res = await fetch('/api/questions')
+        if (!res.ok) return
+        const questions: string[] = await res.json()
+        // Shuffle and pick 3
+        const shuffled = questions.sort(() => 0.5 - Math.random())
+        setSampleQuestions(shuffled.slice(0, 3))
+      } catch (e) {
+        // ignore
+      }
+    }
+    fetchSampleQuestions()
+  }, [])
+
+  const handleSampleClick = (q: string) => {
+    setInput(q)
+    // Auto-submit
+    setTimeout(() => {
+      const form = document.querySelector('form')
+      if (form) {
+        form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))
+      }
+    }, 0)
   }
 
   const welcomeHeader = (
@@ -222,10 +244,14 @@ function ChatFormContent({ className, ...props }: React.ComponentProps<"form">) 
     </header>
   )
 
-  // Pastikan messageList didefinisikan sebelum return
   const messageList = (
     <div className="my-4 flex h-fit min-h-full flex-col gap-4">
-      {processedMessages.map((message, index) => (
+      {error && (
+        <div className="self-center rounded bg-red-100 text-red-700 px-3 py-2 text-xs mb-2 max-w-[80%]">
+          Terjadi kesalahan: {error}
+        </div>
+      )}
+      {messages.map((message, index) => (
         <div key={index} className="flex flex-col">
           <div
             data-role={message.role}
@@ -234,19 +260,19 @@ function ChatFormContent({ className, ...props }: React.ComponentProps<"form">) 
             {message.role === "assistant" ? (
               <div className="prose prose-sm max-w-none [&>p]:mb-4 [&>ul]:space-y-2 [&>ol]:space-y-2">
                 <ReactMarkdown>
-                  {message.content}
+                  {message.content.replace(/(\s*ARTIKEL\s*\d+)+\s*$/gi, "").trim()}
                 </ReactMarkdown>
               </div>
             ) : (
               message.content
             )}
           </div>
-          {/* Sources section */}
-          {message.role === "assistant" && messageSources[message.id] && messageSources[message.id].length > 0 && (
+          {/* Bagian Sumber di bawah respons asisten */}
+          {message.role === "assistant" && messageSources[message.id ?? ""] && messageSources[message.id ?? ""].length > 0 && (
             <div className="mt-1 self-start text-xs text-gray-500">
               <p className="font-medium">Sumber:</p>
               <ul className="mt-1 space-y-1">
-                {messageSources[message.id].map((source, idx) => (
+                {messageSources[message.id ?? ""].map((source, idx) => (
                   <li key={idx}>
                     <Link
                       href={source.url}
@@ -263,8 +289,7 @@ function ChatFormContent({ className, ...props }: React.ComponentProps<"form">) 
           )}
         </div>
       ))}
-      {/* Loading animation - hanya muncul saat memproses, bukan saat mengetik */}
-      {isProcessing && (
+      {isLoading && (
         <div className="self-start rounded-xl bg-gray-100 px-3 py-2 text-sm">
           <div className="flex items-center gap-2">
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -285,7 +310,26 @@ function ChatFormContent({ className, ...props }: React.ComponentProps<"form">) 
       {...props}
     >
       <div className="flex-1 w-full px-6 flex flex-col" ref={chatContainerRef}>
-        {processedMessages.length === 0 ? welcomeHeader : messageList}
+        {messages.length === 0 ? (
+          <>
+            {welcomeHeader}
+            {/* Sample questions UI */}
+            {sampleQuestions.length > 0 && (
+              <div className="flex flex-col gap-3 mb-6">
+                {sampleQuestions.map((q, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    className="border border-gray-200 bg-gray-50 hover:bg-gray-100 text-gray-900 rounded-lg px-4 py-2 text-left transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-300 text-[0.97rem]"
+                    onClick={() => handleSampleClick(q)}
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        ) : messageList}
       </div>
       <form
         onSubmit={handleSubmit}
@@ -315,7 +359,7 @@ function ChatFormContent({ className, ...props }: React.ComponentProps<"form">) 
           </Tooltip>
         </TooltipProvider>
       </form>
-      {/* Footer - hide in embed mode if needed */}
+      {/* Footer tetap */}
       {!isEmbedMode && (
         <footer className="border-t border-gray-200 py-3 text-center text-xs text-gray-500 w-full">
           Chatbot bisa salah, cek kembali dengan membaca laporan{" "}

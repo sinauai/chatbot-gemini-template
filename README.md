@@ -1,6 +1,6 @@
 # Chatbot Berita Kompas.id
 
-Chatbot yang menjawab pertanyaan berdasarkan berita di Kompas.id.
+Chatbot yang menjawab pertanyaan berdasarkan berita di Kompas.id. 
 
 ## Cara Mengubah Konten Berita
 
@@ -24,6 +24,10 @@ Setiap artikel harus memiliki properti berikut:
 - `title`: Judul artikel
 - `full_text`: Teks lengkap artikel
 
+## Cara Mengubah Contoh Pertanyaan
+
+Untuk mengubah contoh pertanyaan yang digunakan oleh chatbot, Anda perlu mengedit file `questions.json` di root project. File ini berisi array pertanyaan
+
 ## Cara Menggunakan Embed
 
 Untuk menyematkan chatbot di website lain, gunakan kode iframe berikut:
@@ -37,3 +41,4 @@ Untuk menyematkan chatbot di website lain, gunakan kode iframe berikut:
   allow="clipboard-write"
 ></iframe>
 
+Atau cukup tempelkan URL chatbot, misalnya https://chatbot-contoh.vercel.app 
