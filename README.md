@@ -30,7 +30,7 @@ Untuk mengubah contoh pertanyaan yang digunakan oleh chatbot, Anda perlu mengedi
 
 ## Cara Menggunakan Embed
 
-Untuk menyematkan chatbot di website lain, gunakan kode iframe berikut:
+Untuk menyematkan chatbot di website lain, cukup tempelkan URL chatbot, misalnya https://chatbot-contoh.vercel.app atau gunakan kode iframe berikut:
 
 ```html
 <iframe 
@@ -41,4 +41,3 @@ Untuk menyematkan chatbot di website lain, gunakan kode iframe berikut:
   allow="clipboard-write"
 ></iframe>
 
-Atau cukup tempelkan URL chatbot, misalnya https://chatbot-contoh.vercel.app 
