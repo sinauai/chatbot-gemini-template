@@ -1,59 +1,14 @@
 import { type CoreMessage, generateText } from "ai"
 import { google } from "@ai-sdk/google"
 import newsData from "@/news.json"
-import { getGeminiEmbedding, cosineSimilarity } from "@/lib/gemini-embedding"
-
-// In-memory cache for news embeddings
-let newsWithEmbeddings: (typeof newsData[0] & { embedding: number[] })[] | null = null;
-
-async function ensureNewsEmbeddings() {
-  if (newsWithEmbeddings) return newsWithEmbeddings;
-  // Compute embedding for each article (full_text)
-  newsWithEmbeddings = await Promise.all(
-    newsData.map(async (article) => ({
-      ...article,
-      embedding: (await getGeminiEmbedding(article.full_text)) ?? []
-    }))
-  );
-  return newsWithEmbeddings;
-}
 
 export async function POST(req: Request) {
   const { messages }: { messages: CoreMessage[] } = await req.json()
   const userQuestion = messages[messages.length - 1]?.content || ""
 
-  // 1. Ensure news embeddings are ready
-  const articles = await ensureNewsEmbeddings()
-
-  // 2. Get embedding for user question (force string, handle possible array of parts)
-  let userQuestionText = "";
-  if (typeof userQuestion === "string") {
-    userQuestionText = userQuestion;
-  } else if (Array.isArray(userQuestion)) {
-    userQuestionText = userQuestion.map(p => {
-      if (typeof p === "string") return p;
-      if (typeof p === "object" && p !== null && "text" in p && typeof (p as any).text === "string") return (p as any).text;
-      return "";
-    }).join(" ");
-  } 
-  const questionEmbedding = await getGeminiEmbedding(userQuestionText)
-
-  // 3. Compute similarity and pick top 3 articles
-  const topArticles = articles
-    .map((article, idx) => ({
-      ...article,
-      similarity: questionEmbedding && article.embedding.length
-        ? cosineSimilarity(questionEmbedding, article.embedding)
-        : -1,
-      originalIndex: idx
-    }))
-    .sort((a, b) => b.similarity - a.similarity)
-    .slice(0, 3)
-    .sort((a, b) => a.originalIndex - b.originalIndex) // keep original order for ARTIKEL X
-
-  // 4. Build newsContext from top articles only
-  const newsContext = topArticles
-    .map((article, idx) => `ARTIKEL ${article.originalIndex + 1}:
+  // Gunakan seluruh isi newsData untuk membangun newsContext
+  const newsContext = newsData
+    .map((article, idx) => `ARTIKEL ${idx + 1}:
 JUDUL: ${article.title}
 URL: ${article.url}
 
