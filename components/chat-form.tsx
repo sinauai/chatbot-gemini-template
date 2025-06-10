@@ -57,6 +57,8 @@ function ChatFormContent({ className, ...props }: React.ComponentProps<"form">) 
   const chatContainerRef = useRef<HTMLDivElement>(null)
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true)
   const [sampleQuestions, setSampleQuestions] = useState<string[]>([])
+  // State untuk title dan subtitle
+  const [headerData, setHeaderData] = useState<{ title: string; subtitle: string } | null>(null)
 
   // Deteksi posisi scroll sebelum pesan baru masuk
   useEffect(() => {
@@ -235,11 +237,30 @@ function ChatFormContent({ className, ...props }: React.ComponentProps<"form">) 
     }, 0)
   }
 
+  // Fetch title dan subtitle dari API
+  useEffect(() => {
+    async function fetchHeader() {
+      try {
+        const res = await fetch('/api/title')
+        if (!res.ok) return
+        const data = await res.json()
+        if (Array.isArray(data) && data.length > 0) {
+          setHeaderData({ title: data[0].title, subtitle: data[0].subtitle })
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+    fetchHeader()
+  }, [])
+
   const welcomeHeader = (
     <header className="m-auto flex max-w-96 flex-col gap-5 text-center py-8">
-      <h1 className="text-2xl font-semibold leading-none tracking-tight">Halo, Sahabat Kompas</h1>
+      <h1 className="text-2xl font-semibold leading-none tracking-tight">
+        {headerData?.title || "Halo, Sahabat Kompas"}
+      </h1>
       <p className="text-muted-foreground text-sm">
-        Silakan ajukan pertanyaan terkait artikel yang Anda baca. Jawaban dibuat berdasarkan berita di Kompas.id.
+        {headerData?.subtitle || "Silakan ajukan pertanyaan terkait artikel yang Anda baca. Jawaban dibuat berdasarkan berita di Kompas.id."}
       </p>
     </header>
   )
